@@ -1,13 +1,5 @@
 # Adverse Selection & Optimal Spread in Market Making
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
-![NumPy](https://img.shields.io/badge/NumPy-1.24%2B-blue?style=flat-square)
-![Matplotlib](https://img.shields.io/badge/Matplotlib-3.7%2B-orange?style=flat-square)
-![Status](https://img.shields.io/badge/STATUS-COMPLETE-00C853?style=flat-square)
-![Domain](https://img.shields.io/badge/DOMAIN-Market%20Microstructure-blueviolet?style=flat-square)
-
----
-
 ## Overview
 
 This project models the core tension in market making: **tight spreads attract flow but lose money to informed traders**. It implements two complementary frameworks:
