@@ -117,7 +117,6 @@ python main.py --fast   # reduced paths for quick testing
 | Market microstructure | Overall domain — why spreads exist, how they're set |
 
 ---
-
 ## References
 
 - Avellaneda, M. & Stoikov, S. (2008). *High-frequency trading in a limit order book.* Quantitative Finance.
