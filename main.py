@@ -2,13 +2,13 @@ import sys
 import time
 import numpy as np
 
-from src.simulator import (
+from market_maker.strategies.simulator import (
     sweep_signal_quality,
     run_as_monte_carlo,
     sweep_risk_aversion,
     sweep_volatility,
 )
-from src.visualizer import (
+from market_maker.visualization.plots import (
     plot_adverse_selection,
     plot_as_simulation,
     plot_sensitivity,
