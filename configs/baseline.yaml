@@ -1,0 +1,6 @@
+# Baseline market-making configuration
+
+strategy: fixed
+spread: 0.02
+order_size: 1.0
+max_inventory: 10

@@ -1,13 +1,3 @@
-"""
-Market Making Research Suite
-=============================
-Run all simulations and generate plots.
-
-Usage:
-    python main.py              # full run
-    python main.py --fast       # quick run (fewer paths, for testing)
-"""
-
 import sys
 import time
 import numpy as np

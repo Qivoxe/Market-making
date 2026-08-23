@@ -1,0 +1,7 @@
+# Backtest configuration
+
+data_path: data/
+start_date: "2024-01-01"
+end_date: "2024-12-31"
+initial_capital: 100000
+transaction_cost: 0.001

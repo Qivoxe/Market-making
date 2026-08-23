@@ -1,0 +1,8 @@
+# ML-enhanced market-making configuration
+
+strategy: ml
+model_path: results/ml_model.pkl
+feature_window: 20
+spread: 0.02
+order_size: 1.0
+max_inventory: 10

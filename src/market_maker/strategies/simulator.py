@@ -1,7 +1,8 @@
-
+"""Simulation utilities for running experiments."""
 
 import numpy as np
-from src.models import BaselineModel, AvellanedaStoikov
+from market_maker.models.baseline import BaselineModel
+from market_maker.models.avellaneda_stoikov import AvellanedaStoikov
 
 
 def sweep_signal_quality(alphas, n_rounds=10_000, seed=42):
