@@ -4,6 +4,85 @@ from src.market_maker.orderbook.models import (
     OrderStatus,
 
 )
+def test_match_across_multiple_price_levels():
+    book = OrderBook()
+
+    first_bid = book.add_order(Side.BUY, 100.0, 50)
+    second_bid = book.add_order(Side.BUY, 99.0, 100)
+
+    sell_id = book.add_order(Side.SELL, 99.0, 120)
+
+    first_order = book.get_order(first_bid)
+    second_order = book.get_order(second_bid)
+    sell_order = book.get_order(sell_id)
+
+    assert first_order is not None
+    assert second_order is not None
+    assert sell_order is not None
+
+    assert first_order.status == OrderStatus.FILLED
+    assert second_order.status == OrderStatus.PARTIALLY_FILLED
+
+    assert second_order.remaining_quantity == 30
+    assert sell_order.status == OrderStatus.FILLED
+
+    assert len(book.trade_log) == 2
+
+    assert book.trade_log[0].price == 100.0
+    assert book.trade_log[0].quantity == 50
+
+    assert book.trade_log[1].price == 99.0
+    assert book.trade_log[1].quantity == 70
+
+def test_cancel_middle_order_preserves_fifo():
+    book = OrderBook()
+
+    first = book.add_order(Side.BUY, 100.0, 50)
+    second = book.add_order(Side.BUY, 100.0, 50)
+    third = book.add_order(Side.BUY, 100.0, 50)
+
+    assert book.cancel_order(second) is True
+
+    sell_id = book.add_order(Side.SELL, 100.0, 60)
+
+    first_order = book.get_order(first)
+    second_order = book.get_order(second)
+    third_order = book.get_order(third)
+    sell_order = book.get_order(sell_id)
+
+    assert first_order is not None
+    assert second_order is not None
+    assert third_order is not None
+    assert sell_order is not None
+
+    assert first_order.status == OrderStatus.FILLED
+    assert second_order.status == OrderStatus.CANCELLED
+
+    assert third_order.status == OrderStatus.PARTIALLY_FILLED
+    assert third_order.remaining_quantity == 40
+
+    assert sell_order.status == OrderStatus.FILLED
+
+def test_order_book_depth():
+    book = OrderBook()
+
+    book.add_order(Side.BUY, 100.0, 50)
+    book.add_order(Side.BUY, 100.0, 25)
+    book.add_order(Side.BUY, 99.0, 100)
+
+    book.add_order(Side.SELL, 101.0, 40)
+    book.add_order(Side.SELL, 101.0, 60)
+    book.add_order(Side.SELL, 102.0, 200)
+
+    assert book.get_bid_depth(2) == [
+        (100.0, 75),
+        (99.0, 100),
+    ]
+
+    assert book.get_ask_depth(2) == [
+        (101.0, 100),
+        (102.0, 200),
+    ]        
 
 def test_add_orders_and_best_price():
     book = OrderBook()
