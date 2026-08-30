@@ -4,10 +4,11 @@ import numpy as np
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import balanced_accuracy_score
-from sklearn.model_selection import StratifiedKFold
 
 from src.market_maker.data.dataset import build_dataset
-from src.market_maker.data.generator import generate_market_dataset
+from src.market_maker.data.generator import (
+    generate_market_dataset,
+)
 
 
 def main() -> None:
@@ -26,28 +27,48 @@ def main() -> None:
     X = dataset.X
     y = dataset.y
 
-    cv = StratifiedKFold(
-        n_splits=5,
-        shuffle=True,
-        random_state=42,
-    )
+    n_samples = len(X)
+    n_folds = 5
+
+    fold_size = n_samples // (n_folds + 1)
 
     scores = []
 
-    for fold, (train_index, test_index) in enumerate(
-        cv.split(X, y),
-        start=1,
-    ):
-        X_train = X[train_index]
-        X_test = X[test_index]
+    print(
+        "Time-Series Cross Validation"
+    )
+    print("=" * 70)
 
-        y_train = y[train_index]
-        y_test = y[test_index]
+    for fold in range(1, n_folds + 1):
+        train_end = (
+            fold * fold_size
+        )
+
+        test_start = train_end
+        test_end = min(
+            test_start + fold_size,
+            n_samples,
+        )
+
+        if test_start >= test_end:
+            continue
+
+        X_train = X[:train_end]
+        y_train = y[:train_end]
+
+        X_test = X[
+            test_start:test_end
+        ]
+
+        y_test = y[
+            test_start:test_end
+        ]
 
         model = RandomForestClassifier(
-            n_estimators=200,
+            n_estimators=300,
             max_depth=8,
             min_samples_leaf=10,
+            max_features="sqrt",
             class_weight="balanced",
             random_state=42,
             n_jobs=-1,
@@ -58,7 +79,9 @@ def main() -> None:
             y_train,
         )
 
-        predictions = model.predict(X_test)
+        predictions = model.predict(
+            X_test
+        )
 
         score = balanced_accuracy_score(
             y_test,
@@ -69,6 +92,9 @@ def main() -> None:
 
         print(
             f"Fold {fold}: "
+            f"train={len(X_train):5d} "
+            f"test={len(X_test):5d} "
+            f"balanced_accuracy="
             f"{score:.4f}"
         )
 
@@ -77,11 +103,29 @@ def main() -> None:
         dtype=float,
     )
 
-    print("\nCross Validation")
-    print(f"Mean: {scores_array.mean():.4f}")
-    print(f"Std: {scores_array.std():.4f}")
-    print(f"Min: {scores_array.min():.4f}")
-    print(f"Max: {scores_array.max():.4f}")
+    print()
+    print("Time-Series Cross Validation")
+    print("=" * 70)
+
+    print(
+        f"Mean Balanced Accuracy: "
+        f"{scores_array.mean():.4f}"
+    )
+
+    print(
+        f"Std:                    "
+        f"{scores_array.std():.4f}"
+    )
+
+    print(
+        f"Min:                    "
+        f"{scores_array.min():.4f}"
+    )
+
+    print(
+        f"Max:                    "
+        f"{scores_array.max():.4f}"
+    )
 
 
 if __name__ == "__main__":

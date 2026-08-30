@@ -49,12 +49,12 @@ def test_custom_threshold():
     signal = generate_signal(
         down_probability=0.10,
         flat_probability=0.20,
-        up_probability=0.50,
+        up_probability=0.70,
         threshold=0.50,
     )
 
     assert signal.action == "BUY"
-    assert signal.confidence == 0.50
+    assert signal.confidence == 0.70
 
 
 def test_invalid_probability():

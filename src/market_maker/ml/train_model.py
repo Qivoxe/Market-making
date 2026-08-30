@@ -8,14 +8,16 @@ from src.market_maker.ml.model import (
 )
 
 
-MODEL_PATH = Path("models/random_forest.joblib")
+MODEL_PATH = Path(
+    "models/random_forest.joblib"
+)
 
 
 def main() -> None:
     print("Training Random Forest...")
 
     model = train_model(
-        count_per_regime=1000,
+        count_per_regime=5000,
         horizon=1,
         threshold=0.001,
         seed=42,

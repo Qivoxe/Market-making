@@ -12,55 +12,79 @@ class Quote:
 
 
 def generate_quotes(
+    *,
     mid_price: float,
     spread: float,
     signal: TradingSignal,
     shift_factor: float = 0.25,
     confidence_scaling: bool = False,
 ) -> Quote:
+    """
+    Generate bid/ask quotes around the mid price.
+
+    Base quote:
+        bid = mid_price - spread / 2
+        ask = mid_price + spread / 2
+
+    BUY:
+        Shift both quotes upward.
+
+    SELL:
+        Shift both quotes downward.
+
+    The quote shift is confidence-aware:
+
+        shift = spread * shift_factor * confidence
+
+    confidence_scaling is retained for API compatibility.
+    """
+
     if mid_price <= 0:
-        raise ValueError("Mid price must be greater than zero.")
+        raise ValueError(
+            "mid_price must be greater than 0."
+        )
 
     if spread < 0:
-        raise ValueError("Spread must not be negative.")
+        raise ValueError(
+            "spread must be non-negative."
+        )
 
     if shift_factor < 0:
-        raise ValueError("Shift factor must not be negative.")
+        raise ValueError(
+            "shift_factor must be non-negative."
+        )
 
     if not 0.0 <= signal.confidence <= 1.0:
         raise ValueError(
-            "Signal confidence must be between 0 and 1."
+            "signal confidence must be between 0 and 1."
+        )
+
+    if signal.action not in {"BUY", "SELL", "HOLD"}:
+        raise ValueError(
+            f"Unknown signal action: {signal.action}"
         )
 
     half_spread = spread / 2.0
 
-    if confidence_scaling:
-        shift = (
-            spread
-            * shift_factor
-            * signal.confidence
-        )
-    else:
-        shift = spread * shift_factor
+    bid = mid_price - half_spread
+    ask = mid_price + half_spread
+
+    # Confidence-aware directional shift.
+    shift = (
+        spread
+        * shift_factor
+        * signal.confidence
+    )
 
     if signal.action == "BUY":
-        center = mid_price + shift
+        bid += shift
+        ask += shift
+
     elif signal.action == "SELL":
-        center = mid_price - shift
-    elif signal.action == "HOLD":
-        center = mid_price
-    else:
-        raise ValueError("Unknown trading signal.")
-
-    bid = center - half_spread
-    ask = center + half_spread
-
-    bid = max(bid, 0.000001)
-
-    if ask <= bid:
-        ask = bid + max(spread, 0.000001)
+        bid -= shift
+        ask -= shift
 
     return Quote(
-        bid=bid,
-        ask=ask,
+        bid=float(bid),
+        ask=float(ask),
     )

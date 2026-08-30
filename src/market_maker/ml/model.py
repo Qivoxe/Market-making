@@ -5,7 +5,9 @@ from pathlib import Path
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 
-from src.market_maker.data.pipeline import build_market_dataset
+from src.market_maker.data.pipeline import (
+    build_market_dataset,
+)
 
 
 FEATURE_NAMES = [
@@ -23,9 +25,14 @@ def train_model(
     threshold: float = 0.001,
     seed: int = 42,
 ) -> RandomForestClassifier:
+    """
+    Train the production Random Forest model.
+    """
+
     dataset = build_market_dataset(
         count_per_regime=count_per_regime,
         horizon=horizon,
+        threshold=threshold,
         seed=seed,
     )
 
@@ -39,7 +46,10 @@ def train_model(
         n_jobs=-1,
     )
 
-    model.fit(dataset.X, dataset.y)
+    model.fit(
+        dataset.X,
+        dataset.y,
+    )
 
     return model
 
@@ -49,12 +59,16 @@ def save_model(
     path: str | Path,
 ) -> None:
     path = Path(path)
+
     path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    joblib.dump(model, path)
+    joblib.dump(
+        model,
+        path,
+    )
 
 
 def load_model(
