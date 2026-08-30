@@ -24,6 +24,7 @@ class BacktestResult:
     pnl: float
     return_pct: float
     trades: tuple[Trade, ...]
+    equity_curve: tuple[float, ...]
 
 
 class BacktestEngine:
@@ -51,10 +52,8 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.cash = initial_cash
         self.position = 0.0
-
         self.max_position = max_position
         self.order_size = order_size
-
         self.trades: list[Trade] = []
 
     def execute_bid(
@@ -73,7 +72,10 @@ class BacktestEngine:
         ):
             return False
 
-        self.cash -= bid * self.order_size
+        self.cash -= (
+            bid * self.order_size
+        )
+
         self.position += self.order_size
 
         self.trades.append(
@@ -103,7 +105,10 @@ class BacktestEngine:
         ):
             return False
 
-        self.cash += ask * self.order_size
+        self.cash += (
+            ask * self.order_size
+        )
+
         self.position -= self.order_size
 
         self.trades.append(
@@ -146,6 +151,8 @@ class BacktestEngine:
                 "Backtest requires at least one decision."
             )
 
+        equity_curve: list[float] = []
+
         for step, (
             decision,
             mid_price,
@@ -172,6 +179,12 @@ class BacktestEngine:
                     ask=quote.ask,
                 )
 
+            equity = self.mark_to_market(
+                mid_price
+            )
+
+            equity_curve.append(equity)
+
         final_mid_price = mid_prices[-1]
 
         final_equity = self.mark_to_market(
@@ -183,7 +196,9 @@ class BacktestEngine:
             - self.initial_cash
         )
 
-        return_pct = pnl / self.initial_cash
+        return_pct = (
+            pnl / self.initial_cash
+        )
 
         return BacktestResult(
             initial_cash=self.initial_cash,
@@ -194,4 +209,5 @@ class BacktestEngine:
             pnl=pnl,
             return_pct=return_pct,
             trades=tuple(self.trades),
+            equity_curve=tuple(equity_curve),
         )
