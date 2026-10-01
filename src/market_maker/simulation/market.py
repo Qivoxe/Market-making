@@ -73,15 +73,23 @@ class MarketSimulator:
             return self.rng.normal(-0.2, 0.5)
 
         if self.regime == MarketRegime.MEAN_REVERTING:
-            deviation = self.fair_price - self.reference_price
+            deviation = (
+                self.fair_price
+                - self.reference_price
+            )
+
             return (
                 0.2 * deviation
                 + self.rng.normal(0.0, 0.5)
             )
 
-        raise ValueError("Unsupported market regime.")
+        raise ValueError(
+            "Unsupported market regime."
+        )
 
-    def _generate_order(self) -> tuple[Side, float, float]:
+    def _generate_order(
+        self,
+    ) -> tuple[Side, float, float]:
         side = (
             Side.BUY
             if self.rng.random() < 0.5
@@ -95,11 +103,82 @@ class MarketSimulator:
             self.reference_price + price_move,
         )
 
-        quantity = self.rng.uniform(1.0, 10.0)
+        quantity = self.rng.uniform(
+            1.0,
+            10.0,
+        )
 
         return side, price, quantity
 
-    def step_market(self) -> MarketSnapshot | None:
+    def generate_market_order(
+        self,
+    ) -> tuple[Side, float, float]:
+        """
+        Generate the next external market order without
+        submitting it to the exchange.
+
+        This method is used by the event-driven
+        market-making backtest.
+        """
+
+        return self._generate_order()
+
+    def generate_market_event(
+        self,
+    ) -> tuple[
+        Side,
+        float,
+        float,
+        MarketSnapshot | None,
+    ]:
+        """
+        Generate one external market order and return the
+        current market snapshot.
+
+        The generated order is NOT submitted to the exchange.
+
+        This allows a market-making strategy to:
+
+        1. Observe the current market.
+        2. Generate its quotes.
+        3. Place those quotes into the exchange.
+        4. Submit the external market order.
+        5. Let the matching engine determine fills.
+        """
+
+        side, price, quantity = self._generate_order()
+
+        features: OrderFlowFeatures | None = (
+            calculate_order_flow(self.book)
+        )
+
+        if features is None:
+            return (
+                side,
+                price,
+                quantity,
+                None,
+            )
+
+        snapshot = MarketSnapshot(
+            step=self.step + 1,
+            mid_price=features.mid_price,
+            spread=features.spread,
+            bid_volume=features.bid_volume,
+            ask_volume=features.ask_volume,
+            imbalance=features.imbalance,
+        )
+
+        return (
+            side,
+            price,
+            quantity,
+            snapshot,
+        )
+
+    def step_market(
+        self,
+    ) -> MarketSnapshot | None:
         side, price, quantity = self._generate_order()
 
         self.exchange.submit_order(
