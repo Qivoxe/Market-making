@@ -6,22 +6,16 @@ from src.market_maker.backtest.market_making_engine import (
     MarketMakingBacktestEngine,
     MarketMakingResult,
 )
-from src.market_maker.simulation.market import (
-    MarketSimulator,
-)
-from src.market_maker.strategy.engine import (
-    make_strategy_decision,
-)
-from src.market_maker.ml.signal import (
-    TradingSignal,
-)
+from src.market_maker.ml.signal import TradingSignal
+from src.market_maker.simulation.market import MarketSimulator
+from src.market_maker.strategy.engine import make_strategy_decision
 
 
 @dataclass(frozen=True)
 class MarketMakingRunConfig:
     steps: int = 100
     initial_price: float = 100.0
-    seed: int | None = 42
+    seed: int = 42
     initial_cash: float = 10_000.0
     max_position: float = 100.0
     order_size: float = 1.0
@@ -30,49 +24,49 @@ class MarketMakingRunConfig:
 
 
 def run_market_making_backtest(
-    *,
     signal: TradingSignal,
     config: MarketMakingRunConfig | None = None,
 ) -> MarketMakingResult:
     """
-    Run a simple event-driven market-making backtest
-    using a fixed trading signal.
+    Run an event-driven market-making backtest.
 
-    This is an integration test of the simulator,
-    strategy, order book, matching engine, and
-    market-making backtest engine.
+    The simulator and backtest engine share the same ExchangeEngine.
+
+    Each market event is processed exactly once:
+
+    1. Generate market event.
+    2. Generate strategy decision.
+    3. Place strategy quotes.
+    4. Submit external market order.
+    5. Process fills.
+    6. Cancel remaining quotes.
+    7. Record mark-to-market equity.
     """
 
     if config is None:
         config = MarketMakingRunConfig()
 
     if config.steps <= 0:
-        raise ValueError(
-            "Steps must be greater than zero."
-        )
+        raise ValueError("steps must be positive")
 
     simulator = MarketSimulator(
         initial_price=config.initial_price,
         seed=config.seed,
     )
 
+    exchange = simulator.exchange
+
     engine = MarketMakingBacktestEngine(
         initial_cash=config.initial_cash,
         max_position=config.max_position,
         order_size=config.order_size,
+        exchange=exchange,
     )
 
-    decisions = []
-    market_orders = []
-    mid_prices = []
+    equity_curve: list[float] = []
 
     for _ in range(config.steps):
-        (
-            side,
-            price,
-            quantity,
-            snapshot,
-        ) = simulator.generate_market_event()
+        side, price, quantity, snapshot = simulator.generate_market_event()
 
         if snapshot is None:
             continue
@@ -87,42 +81,56 @@ def run_market_making_backtest(
             inventory_skew_factor=config.inventory_skew_factor,
         )
 
-        decisions.append(decision)
-
-        market_orders.append(
-            (
-                side,
-                price,
-                quantity,
-            )
+        # Place our quotes first.
+        strategy_order_ids = engine.place_quotes(
+            decision=decision,
         )
 
-        mid_prices.append(
-            snapshot.mid_price
+        # Submit the external market order exactly once.
+        engine.process_market_order(
+            side=side,
+            price=price,
+            quantity=quantity,
+            step=snapshot.step,
+            strategy_order_ids=strategy_order_ids,
         )
 
-        # Advance the simulator's market state using
-        # the generated external order.
-        simulator.exchange.submit_order(
-            side,
-            price,
-            quantity,
-        )
+        # Remove any unfilled quotes.
+        engine.cancel_quotes(strategy_order_ids)
 
+        # Update simulator state after the event.
         simulator.step += 1
 
-        simulator.reference_price = (
-            simulator.exchange.get_mid_price()
-            or simulator.reference_price
+        current_mid = exchange.get_mid_price()
+
+        if current_mid is not None:
+            simulator.reference_price = current_mid
+            mid_price = current_mid
+        else:
+            mid_price = snapshot.mid_price
+
+        equity_curve.append(
+            engine.mark_to_market(mid_price)
         )
 
-    if not decisions:
-        raise RuntimeError(
-            "No valid market events were generated."
+    if not equity_curve:
+        raise ValueError(
+            "Market-making backtest produced no market events."
         )
 
-    return engine.run(
-        decisions=decisions,
-        market_orders=market_orders,
-        mid_prices=mid_prices,
+    final_mid_price = simulator.reference_price
+    final_equity = engine.mark_to_market(final_mid_price)
+    pnl = final_equity - config.initial_cash
+    return_pct = pnl / config.initial_cash
+
+    return MarketMakingResult(
+        initial_cash=config.initial_cash,
+        final_cash=engine.cash,
+        final_position=engine.position,
+        final_mid_price=final_mid_price,
+        final_equity=final_equity,
+        pnl=pnl,
+        return_pct=return_pct,
+        trades=tuple(engine.trades),
+        equity_curve=tuple(equity_curve),
     )

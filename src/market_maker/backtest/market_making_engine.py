@@ -33,12 +33,9 @@ class MarketMakingBacktestEngine:
     """
     Event-driven market-making backtest engine.
 
-    The strategy places bid/ask quotes into the simulated exchange.
-    Incoming market orders interact with those resting quotes through
-    the existing matching engine.
-
-    Unlike BacktestEngine, a BUY/SELL signal does not automatically
-    create a trade. The actual order-book matching determines fills.
+    The engine can operate on an externally supplied ExchangeEngine.
+    This allows the market simulator and strategy to share exactly
+    the same order book.
     """
 
     def __init__(
@@ -46,6 +43,7 @@ class MarketMakingBacktestEngine:
         initial_cash: float = 10_000.0,
         max_position: float = 100.0,
         order_size: float = 1.0,
+        exchange: ExchangeEngine | None = None,
     ) -> None:
         if initial_cash <= 0:
             raise ValueError(
@@ -68,16 +66,30 @@ class MarketMakingBacktestEngine:
         self.max_position = float(max_position)
         self.order_size = float(order_size)
 
-        self.exchange = ExchangeEngine()
+        self.exchange = (
+            exchange
+            if exchange is not None
+            else ExchangeEngine()
+        )
+
         self.trades: list[MarketMakingTrade] = []
 
-    def mark_to_market(self, mid_price: float) -> float:
+        # Track exchange trades already processed.
+        self._processed_trade_ids: set[int] = set()
+
+    def mark_to_market(
+        self,
+        mid_price: float,
+    ) -> float:
         if mid_price <= 0:
             raise ValueError(
                 "Mid price must be greater than zero."
             )
 
-        return self.cash + self.position * mid_price
+        return (
+            self.cash
+            + self.position * mid_price
+        )
 
     def _apply_fill(
         self,
@@ -98,27 +110,37 @@ class MarketMakingBacktestEngine:
             )
 
         if side == Side.BUY:
-            new_position = self.position + quantity
+            new_position = (
+                self.position + quantity
+            )
 
             if new_position > self.max_position:
                 raise RuntimeError(
                     "Buy fill would exceed maximum position."
                 )
 
-            self.cash -= price * quantity
+            self.cash -= (
+                price * quantity
+            )
+
             self.position = new_position
 
             trade_side = "BUY"
 
         elif side == Side.SELL:
-            new_position = self.position - quantity
+            new_position = (
+                self.position - quantity
+            )
 
             if new_position < -self.max_position:
                 raise RuntimeError(
                     "Sell fill would exceed maximum position."
                 )
 
-            self.cash += price * quantity
+            self.cash += (
+                price * quantity
+            )
+
             self.position = new_position
 
             trade_side = "SELL"
@@ -144,18 +166,22 @@ class MarketMakingBacktestEngine:
         step: int,
     ) -> None:
         """
-        Inspect exchange trades and apply only fills belonging
-        to our market-maker orders.
+        Process newly generated exchange trades involving
+        one of our strategy orders.
         """
 
         for trade in self.exchange.trade_log:
-            if (
-                trade.buy_order_id not in strategy_order_ids
-                and trade.sell_order_id not in strategy_order_ids
-            ):
+            if trade.trade_id in self._processed_trade_ids:
                 continue
 
-            if trade.buy_order_id in strategy_order_ids:
+            self._processed_trade_ids.add(
+                trade.trade_id
+            )
+
+            if (
+                trade.buy_order_id
+                in strategy_order_ids
+            ):
                 self._apply_fill(
                     side=Side.BUY,
                     price=trade.price,
@@ -163,7 +189,10 @@ class MarketMakingBacktestEngine:
                     step=step,
                 )
 
-            if trade.sell_order_id in strategy_order_ids:
+            elif (
+                trade.sell_order_id
+                in strategy_order_ids
+            ):
                 self._apply_fill(
                     side=Side.SELL,
                     price=trade.price,
@@ -177,10 +206,7 @@ class MarketMakingBacktestEngine:
         decision: StrategyDecision,
     ) -> tuple[int, int]:
         """
-        Place the strategy's bid and ask into the exchange.
-
-        Returns:
-            (bid_order_id, ask_order_id)
+        Place both sides of the strategy quote.
         """
 
         bid_order = self.exchange.submit_order(
@@ -195,20 +221,27 @@ class MarketMakingBacktestEngine:
             self.order_size,
         )
 
-        return bid_order.order_id, ask_order.order_id
+        return (
+            bid_order.order_id,
+            ask_order.order_id,
+        )
 
     def cancel_quotes(
         self,
         order_ids: Sequence[int],
     ) -> None:
         for order_id in order_ids:
-            order = self.exchange.get_order(order_id)
+            order = self.exchange.get_order(
+                order_id
+            )
 
             if order is None:
                 continue
 
             if order.is_active:
-                self.exchange.cancel_order(order_id)
+                self.exchange.cancel_order(
+                    order_id
+                )
 
     def process_market_order(
         self,
@@ -220,10 +253,8 @@ class MarketMakingBacktestEngine:
         step: int,
     ) -> None:
         """
-        Submit an external market participant's limit order.
-
-        The order interacts with the strategy's resting quotes through
-        the existing matching engine.
+        Submit an external market participant order
+        into the same exchange used by the strategy.
         """
 
         if price <= 0:
@@ -251,19 +282,22 @@ class MarketMakingBacktestEngine:
         self,
         *,
         decisions: Sequence[StrategyDecision],
-        market_orders: Sequence[tuple[Side, float, float]],
+        market_orders: Sequence[
+            tuple[Side, float, float]
+        ],
         mid_prices: Sequence[float],
     ) -> MarketMakingResult:
         """
         Run an event-driven market-making backtest.
 
-        Each event:
+        For each event:
 
-        1. Strategy places bid/ask.
-        2. External market order arrives.
-        3. Matching engine determines fills.
-        4. Remaining strategy quotes are cancelled.
-        5. Equity is marked to market.
+        1. Place strategy bid and ask.
+        2. Submit external market order.
+        3. Let the matching engine determine fills.
+        4. Process strategy fills.
+        5. Cancel remaining quotes.
+        6. Mark portfolio to market.
         """
 
         if not (
@@ -278,7 +312,8 @@ class MarketMakingBacktestEngine:
 
         if len(decisions) == 0:
             raise ValueError(
-                "Market-making backtest requires at least one event."
+                "Market-making backtest requires "
+                "at least one event."
             )
 
         equity_curve: list[float] = []
@@ -302,19 +337,15 @@ class MarketMakingBacktestEngine:
 
             side, price, quantity = market_order
 
-            strategy_order_ids: set[int] = set()
-
-            # Place both sides of the market-making quote.
             bid_id, ask_id = self.place_quotes(
                 decision=decision,
             )
 
-            strategy_order_ids.update(
-                {bid_id, ask_id}
-            )
+            strategy_order_ids = {
+                bid_id,
+                ask_id,
+            }
 
-            # Let the incoming market order interact
-            # with our resting quotes.
             self.process_market_order(
                 side=side,
                 price=price,
@@ -323,7 +354,6 @@ class MarketMakingBacktestEngine:
                 step=step,
             )
 
-            # Quotes are refreshed every event.
             self.cancel_quotes(
                 strategy_order_ids
             )
@@ -334,15 +364,22 @@ class MarketMakingBacktestEngine:
 
             equity_curve.append(equity)
 
-        final_mid_price = float(mid_prices[-1])
+        final_mid_price = float(
+            mid_prices[-1]
+        )
 
         final_equity = self.mark_to_market(
             final_mid_price
         )
 
-        pnl = final_equity - self.initial_cash
+        pnl = (
+            final_equity
+            - self.initial_cash
+        )
 
-        return_pct = pnl / self.initial_cash
+        return_pct = (
+            pnl / self.initial_cash
+        )
 
         return MarketMakingResult(
             initial_cash=self.initial_cash,
