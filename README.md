@@ -88,6 +88,23 @@ One local event-driven simulation with a fixed seed produced:
 
 These figures represent a single simulation run, not evidence of consistent profitability. Results depend on the configuration, random seed, market assumptions, and strategy behavior. They should be validated across multiple runs and against appropriate baselines.
 
+## Visualizations
+
+The `results/` directory contains plots generated for the market-making analysis.
+
+### Avellaneda–Stoikov Model
+
+![Avellaneda–Stoikov Model](results/avellaneda_stoikov.png)
+
+### Adverse Selection Analysis
+
+![Adverse Selection Analysis](results/adverse_selection.png)
+
+### Sensitivity Analysis
+
+![Sensitivity Analysis](results/sensitivity.png)
+
+
 ## Future Improvements
 
 - Evaluate performance across multiple random seeds and market regimes.
