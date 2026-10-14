@@ -1,3 +1,4 @@
+﻿
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -31,13 +32,11 @@ class MarketSimulator:
         regime: MarketRegime = MarketRegime.NORMAL,
     ) -> None:
         if initial_price <= 0:
-            raise ValueError(
-                "Initial price must be greater than zero."
-            )
+            raise ValueError("initial_price must be positive")
 
-        self.initial_price = initial_price
-        self.reference_price = initial_price
-        self.fair_price = initial_price
+        self.initial_price = float(initial_price)
+        self.reference_price = float(initial_price)
+        self.fair_price = float(initial_price)
         self.rng = np.random.default_rng(seed)
         self.exchange = ExchangeEngine()
         self.book = self.exchange.book
@@ -52,7 +51,6 @@ class MarketSimulator:
             self.initial_price - 0.5,
             10.0,
         )
-
         self.exchange.submit_order(
             Side.SELL,
             self.initial_price + 0.5,
@@ -61,35 +59,26 @@ class MarketSimulator:
 
     def _price_move(self) -> float:
         if self.regime == MarketRegime.NORMAL:
-            return self.rng.normal(0.0, 0.5)
+            return float(self.rng.normal(0.0, 0.5))
 
         if self.regime == MarketRegime.HIGH_VOLATILITY:
-            return self.rng.normal(0.0, 2.0)
+            return float(self.rng.normal(0.0, 2.0))
 
         if self.regime == MarketRegime.TRENDING_UP:
-            return self.rng.normal(0.2, 0.5)
+            return float(self.rng.normal(0.2, 0.5))
 
         if self.regime == MarketRegime.TRENDING_DOWN:
-            return self.rng.normal(-0.2, 0.5)
+            return float(self.rng.normal(-0.2, 0.5))
 
         if self.regime == MarketRegime.MEAN_REVERTING:
-            deviation = (
-                self.fair_price
-                - self.reference_price
-            )
-
-            return (
-                0.2 * deviation
+            return float(
+                0.2 * (self.fair_price - self.reference_price)
                 + self.rng.normal(0.0, 0.5)
             )
 
-        raise ValueError(
-            "Unsupported market regime."
-        )
+        raise ValueError(f"Unsupported market regime: {self.regime}")
 
-    def _generate_order(
-        self,
-    ) -> tuple[Side, float, float]:
+    def _generate_order(self) -> tuple[Side, float, float]:
         side = (
             Side.BUY
             if self.rng.random() < 0.5
@@ -97,68 +86,67 @@ class MarketSimulator:
         )
 
         price_move = self._price_move()
+        price = max(0.01, self.reference_price + price_move)
+        quantity = float(self.rng.uniform(1.0, 10.0))
 
-        price = max(
-            0.01,
-            self.reference_price + price_move,
-        )
+        return side, float(price), quantity
 
-        quantity = self.rng.uniform(
-            1.0,
-            10.0,
-        )
+    def _ensure_book_liquidity(self) -> None:
+        """Restore a basic two-sided book when a side is empty."""
+        best_bid = self.exchange.get_best_bid()
+        best_ask = self.exchange.get_best_ask()
 
-        return side, price, quantity
+        if best_bid is None:
+            bid_price = max(0.01, self.reference_price - 0.5)
 
-    def generate_market_order(
-        self,
-    ) -> tuple[Side, float, float]:
-        """
-        Generate the next external market order without
-        submitting it to the exchange.
+            if best_ask is not None:
+                bid_price = min(bid_price, best_ask - 0.01)
 
-        This method is used by the event-driven
-        market-making backtest.
-        """
+            if bid_price > 0:
+                self.exchange.submit_order(
+                    Side.BUY,
+                    bid_price,
+                    10.0,
+                )
 
+        best_bid = self.exchange.get_best_bid()
+        best_ask = self.exchange.get_best_ask()
+
+        if best_ask is None:
+            ask_price = max(
+                self.reference_price + 0.5,
+                (best_bid + 0.01) if best_bid is not None else 0.01,
+            )
+
+            self.exchange.submit_order(
+                Side.SELL,
+                ask_price,
+                10.0,
+            )
+
+    def generate_market_order(self) -> tuple[Side, float, float]:
+        """Generate an external order without submitting it."""
         return self._generate_order()
 
     def generate_market_event(
         self,
-    ) -> tuple[
-        Side,
-        float,
-        float,
-        MarketSnapshot | None,
-    ]:
+    ) -> tuple[Side, float, float, MarketSnapshot | None]:
         """
-        Generate one external market order and return the
-        current market snapshot.
+        Generate one external order and the current market snapshot.
 
-        The generated order is NOT submitted to the exchange.
-
-        This allows a market-making strategy to:
-
-        1. Observe the current market.
-        2. Generate its quotes.
-        3. Place those quotes into the exchange.
-        4. Submit the external market order.
-        5. Let the matching engine determine fills.
+        The external order is not submitted here. The runner places its
+        quotes first, then submits the external order exactly once.
         """
-
         side, price, quantity = self._generate_order()
 
-        features: OrderFlowFeatures | None = (
-            calculate_order_flow(self.book)
+        self._ensure_book_liquidity()
+
+        features: OrderFlowFeatures | None = calculate_order_flow(
+            self.book
         )
 
         if features is None:
-            return (
-                side,
-                price,
-                quantity,
-                None,
-            )
+            return side, price, quantity, None
 
         snapshot = MarketSnapshot(
             step=self.step + 1,
@@ -169,16 +157,10 @@ class MarketSimulator:
             imbalance=features.imbalance,
         )
 
-        return (
-            side,
-            price,
-            quantity,
-            snapshot,
-        )
+        return side, price, quantity, snapshot
 
-    def step_market(
-        self,
-    ) -> MarketSnapshot | None:
+    def step_market(self) -> MarketSnapshot | None:
+        """Submit one simulated order and return the resulting snapshot."""
         side, price, quantity = self._generate_order()
 
         self.exchange.submit_order(
@@ -187,8 +169,10 @@ class MarketSimulator:
             quantity,
         )
 
-        features: OrderFlowFeatures | None = (
-            calculate_order_flow(self.book)
+        self._ensure_book_liquidity()
+
+        features: OrderFlowFeatures | None = calculate_order_flow(
+            self.book
         )
 
         if features is None:
@@ -206,14 +190,9 @@ class MarketSimulator:
             imbalance=features.imbalance,
         )
 
-    def generate_snapshots(
-        self,
-        count: int,
-    ) -> list[MarketSnapshot]:
+    def generate_snapshots(self, count: int) -> list[MarketSnapshot]:
         if count <= 0:
-            raise ValueError(
-                "Count must be greater than zero."
-            )
+            raise ValueError("count must be positive")
 
         snapshots: list[MarketSnapshot] = []
 
@@ -224,3 +203,4 @@ class MarketSimulator:
                 snapshots.append(snapshot)
 
         return snapshots
+
